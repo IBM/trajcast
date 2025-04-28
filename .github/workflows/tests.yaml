@@ -67,9 +67,3 @@ jobs:
         run: |
           source venv/bin/activate 
           coverage report -m  # Show the coverage in the terminal
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
