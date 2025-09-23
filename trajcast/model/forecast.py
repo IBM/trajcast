@@ -512,6 +512,7 @@ class Forecast:
             for step in tqdm(range(1, n_steps + 1)):
                 # make a step
                 frame = self._make_timestep(frame, step)
+                temp = self.temp(frame)
 
                 # check for writer
                 if step % self.write_freq_xyz == 0:
