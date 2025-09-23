@@ -61,6 +61,7 @@ jobs:
           source venv/bin/activate
           cd $GITHUB_WORKSPACE
           coverage run --source=trajcast -m unittest discover  -s  tests -p "test_*.py"
+          exit $?
           coverage xml
 
       - name: Generate coverage report
