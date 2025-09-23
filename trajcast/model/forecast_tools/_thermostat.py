@@ -1,5 +1,5 @@
 import torch
-
+from typing import Union, List
 from trajcast.data._keys import ATOMIC_MASSES_KEY, VELOCITIES_KEY
 from trajcast.data.atomic_graph import AtomicGraph
 from trajcast.model.forecast_tools import Temperature
@@ -15,10 +15,11 @@ class CSVRThermostat(torch.nn.Module):
 
     def __init__(
         self,
-        target_temp: float,
+        target_temp: Union[float, List[float]],
         timestep: float,
         damping: float,
         temperature_handler: Temperature,
+        n_steps: int,
     ):
         super().__init__()
 
@@ -34,9 +35,23 @@ class CSVRThermostat(torch.nn.Module):
                 torch.tensor([-timestep / damping], dtype=torch.get_default_dtype())
             ),
         )
+        if isinstance(target_temp, float):
+            self.register_buffer("start_temp", torch.tensor(target_temp))
+            self.temp_style = "EQUAL"
 
-        # target kinetic energy, this is in eV
-        self.register_buffer("e_kin_target", self.temp.to_kinetic_energy(target_temp))
+        else:
+            if len(target_temp) != 2:
+                raise TypeError(
+                    "Temperature should be float or list with two floats (start and stop temperature)."
+                )
+
+            start_temp = float(target_temp[0])
+            stop_temp = float(target_temp[1])
+            self.temp_style = "RAMP" if start_temp != stop_temp else "CONST"
+            self.register_buffer(
+                "rate", torch.tensor((stop_temp - start_temp) / n_steps)
+            )
+            self.register_buffer("start_temp", torch.tensor(start_temp))
 
         # for sampling noise we initialise a gamma distribution
         if (self.n_dofs - 1) % 2 == 0:
@@ -48,7 +63,7 @@ class CSVRThermostat(torch.nn.Module):
                 concentration=(self.n_dofs - 2) / 2, rate=1.0
             )
 
-    def forward(self, data: AtomicGraph) -> AtomicGraph:
+    def forward(self, data: AtomicGraph, step: int) -> AtomicGraph:
         masses = data[ATOMIC_MASSES_KEY]
         velocities = data[VELOCITIES_KEY]
 
@@ -58,19 +73,28 @@ class CSVRThermostat(torch.nn.Module):
             * self.temp.conv_fac
         )
         # compute rescale_factor
-        alpha = self._get_rescale_factor(e_kin)
+        alpha = self._get_rescale_factor(e_kin, step)
 
         # rescale velocities accordingly
         data[VELOCITIES_KEY] *= alpha
         return data
 
-    def _get_rescale_factor(self, e_kin_current: torch.Tensor) -> torch.Tensor:
+    def _get_rescale_factor(
+        self, e_kin_current: torch.Tensor, step: int
+    ) -> torch.Tensor:
+
+        if self.temp_style == "CONST":
+            temp_target = self.start_temp
+
+        else:
+            temp_target = self.start_temp + self.rate * step
+
+        # target kinetic energy, this is in eV
+        e_kin_target = self.temp.to_kinetic_energy(temp_target)
+
         # compute constant c2 with c1 and kinetic energies
         c2 = (
-            (torch.tensor(1.0) - self.c1)
-            * self.e_kin_target
-            / e_kin_current
-            / self.n_dofs
+            (torch.tensor(1.0) - self.c1) * e_kin_target / e_kin_current / self.n_dofs
         ).to(self.device)
         # draw random number from Gaussian distribution with unitary variance (R1)
         r1 = torch.randn(1, device=self.device)

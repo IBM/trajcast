@@ -1,7 +1,7 @@
 import os
 import warnings
 from typing import Dict, Optional
-
+from tqdm import tqdm
 import ase.io
 import torch
 import yaml
@@ -402,6 +402,7 @@ class Forecast:
                 timestep=timestep,
                 damping=tau,
                 temperature_handler=self.temp,
+                n_steps=self.protocol.get(RUN_KEY),
             ).to(self.device)
 
         else:
@@ -435,6 +436,9 @@ class Forecast:
                     f"Either set {VELOCITIES_KEY} to True or pass user requirements as dictionary."
                 )
 
+            if isinstance(temperature, list):
+                temperature = temperature[0]
+
             vel_init = init_velocity(
                 target_temperature=temperature,
                 graph=self.start_graph,
@@ -449,13 +453,30 @@ class Forecast:
         # for writing to file
         # if no write frequency is given
         write_settings = self.protocol.get(WRITE_TRAJECTORY_KEY)
-        self.write_freq = self.protocol.get(RUN_KEY) + 1
+        self.write_freq_xyz = self.protocol.get(RUN_KEY) + 1
+        self.write_freq_temp = self.protocol.get(RUN_KEY) + 1
+
         if write_settings:
-            self.write_freq = write_settings.get("every", 1)
-            if not isinstance(self.write_freq, int):
-                raise TypeError("Write frequency must be specified as integer")
+            write_freq = write_settings.get("every", 1)
+
+            if isinstance(write_freq, int):
+                self.write_freq_xyz = write_freq
+                self.write_freq_temp = write_freq
+
+            elif isinstance(write_freq, Dict):
+                self.write_freq_xyz = write_freq.get("xyz", 1)
+                self.write_freq_temp = write_freq.get("temp", self.write_freq_xyz)
+
+            else:
+                raise TypeError("Write frequency must be specified as integer or dict.")
+            self.save_vels = write_settings.get("save_velocities", True)
             self.filename = write_settings[FILENAME_KEY]
             self.fileformat = write_settings.get("format", "extxyz")
+            logdir = os.path.dirname(self.filename)
+            self.logfile = os.path.join(
+                logdir, os.path.basename(self.filename).split(".")[0] + ".log"
+            )
+            os.makedirs(logdir, exist_ok=True)
             # write initial frame to file
             self._write_frame_to_file(
                 frame=self.start_graph,
@@ -480,20 +501,29 @@ class Forecast:
         n_steps = self.protocol.get(RUN_KEY)
         # initialise frame
         frame = self.start_graph
+        temp = self.temp(frame)
+
+        with open(self.logfile, "w") as f:
+            f.write("step,Temperature\n")
+            f.write(f"0,{temp:3.3f}\n")
 
         # loop over all steps
         with torch.no_grad():
-            for step in range(1, n_steps + 1):
+            for step in tqdm(range(1, n_steps + 1)):
                 # make a step
                 frame = self._make_timestep(frame, step)
 
                 # check for writer
-                if step % self.write_freq == 0:
+                if step % self.write_freq_xyz == 0:
                     self._write_frame_to_file(
                         frame=frame,
                         step=step,
                         append=True,
                     )
+
+                if step % self.write_freq_temp == 0:
+                    with open(self.logfile, "a") as f:
+                        f.write(f"{step},{temp:3.3f}\n")
 
     def _write_frame_to_file(
         self,
@@ -503,6 +533,9 @@ class Forecast:
     ):
         # get ase.Atoms object
         ase_atoms = frame.ASEAtomsObject
+
+        if not self.save_vels:
+            ase_atoms.arrays.pop("velocities")
 
         # add timestamp
         ase_atoms.info[FRAME_KEY] = step
@@ -533,7 +566,7 @@ class Forecast:
 
         # thermostatting
         if self.nvt:
-            frame = self.thermo(frame)
+            frame = self.thermo(frame, step)
 
         # manipulate momentum if required
         if self.momentum and step % self.momentum.adjust_freq == 0:

@@ -45,10 +45,11 @@ class Temperature(torch.nn.Module):
 
         self.register_buffer("kB", torch.tensor(kB))
 
-    def to_kinetic_energy(self, temperature: float) -> torch.Tensor:
+    def to_kinetic_energy(self, temperature: torch.Tensor) -> torch.Tensor:
         return torch.tensor(
             [0.5 * self._n_dofs * temperature * self.kB],
             dtype=torch.get_default_dtype(),
+            device=temperature.device,
         )
 
     def from_kinetic_energy(self, kinetic_energy: torch.Tensor) -> float:
