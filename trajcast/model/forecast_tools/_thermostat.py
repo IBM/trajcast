@@ -15,7 +15,7 @@ class CSVRThermostat(torch.nn.Module):
 
     def __init__(
         self,
-        target_temp: Union[float, List[float]],
+        target_temp: Union[float, int, List[float], List[int]],
         timestep: float,
         damping: float,
         temperature_handler: Temperature,
@@ -35,9 +35,9 @@ class CSVRThermostat(torch.nn.Module):
                 torch.tensor([-timestep / damping], dtype=torch.get_default_dtype())
             ),
         )
-        if isinstance(target_temp, float):
-            self.register_buffer("start_temp", torch.tensor(target_temp))
-            self.temp_style = "EQUAL"
+        if isinstance(target_temp, float) or isinstance(target_temp, int):
+            self.register_buffer("start_temp", torch.tensor(float(target_temp)))
+            self.temp_style = "CONST"
 
         else:
             if len(target_temp) != 2:

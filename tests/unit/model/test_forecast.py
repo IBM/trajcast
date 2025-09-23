@@ -463,10 +463,8 @@ class TestCSVRThermostat(unittest.TestCase):
             timestep=5.0,
             damping=1000.0,
             temperature_handler=temperature,
+            n_steps=50,
         )
-
-        self.assertIsInstance(csvr.e_kin_target, torch.Tensor)
-        self.assertEqual(csvr.e_kin_target.shape, torch.Size([1]))
 
         self.assertIsInstance(csvr.temp.conv_fac, torch.Tensor)
         self.assertEqual(csvr.temp.conv_fac.shape, torch.Size([1]))
@@ -474,13 +472,14 @@ class TestCSVRThermostat(unittest.TestCase):
         self.assertTrue(csvr.temp._n_dofs == 90)
 
     def test_returns_sum_noises_are_sampled_correclty_when_ndof_odd(self):
-
+        n_steps = 500000
         temperature = Temperature(units="real", n_atoms=162, n_extra_dofs=3)
         csvr = CSVRThermostat(
             target_temp=300.0,
             timestep=20.0,
             damping=2000,
             temperature_handler=temperature,
+            n_steps=n_steps,
         )
 
         gamm = []
@@ -499,18 +498,20 @@ class TestCSVRThermostat(unittest.TestCase):
         self.assertTrue(torch.isclose(gamm.std(), gauss.std(), atol=1e-1))
 
     def test_returns_sum_noises_are_sampled_correclty_when_ndof_even(self):
+        n_steps = 500000
         temperature = Temperature(units="real", n_atoms=22, n_extra_dofs=6)
         csvr = CSVRThermostat(
             target_temp=150.0,
             timestep=5.0,
             damping=500,
             temperature_handler=temperature,
+            n_steps=n_steps,
         )
 
         gamm = []
         gauss = []
         n_dofs = temperature._n_dofs
-        for i in range(500000):
+        for i in range(n_steps):
             # gaussian direct
             rns = torch.randn(n_dofs - 1)
             gauss.append(rns.pow(2).sum())
@@ -540,18 +541,18 @@ class TestCSVRThermostat(unittest.TestCase):
         )
 
         graph = f.start_graph
-
+        n_steps = 500000
         temperature = Temperature(units="real", n_atoms=graph.num_nodes, n_extra_dofs=0)
         csvr = CSVRThermostat(
             target_temp=150.0,
             timestep=5.0,
             damping=50.0,
             temperature_handler=temperature,
+            n_steps=n_steps,
         )
-
         temps = []
-        for _ in range(500000):
-            graph = csvr(graph)
+        for step in range(n_steps):
+            graph = csvr(graph, step)
             T = temperature(graph)
             temps.append(T)
 
@@ -588,18 +589,22 @@ class TestCSVRThermostat(unittest.TestCase):
                 },
             }
         )
-
+        n_steps = 500
         graph = f.start_graph
         csvr = CSVRThermostat(
-            target_temp=250.0, timestep=5.0, damping=500.0, temperature_handler=f.temp
+            target_temp=250.0,
+            timestep=5.0,
+            damping=500.0,
+            temperature_handler=f.temp,
+            n_steps=n_steps,
         )
 
         temps_s1 = []
         vel_s1 = []
-        for steps in range(500):
+        for steps in range(n_steps):
             T = f.temp(graph)
             vel_s1.append(graph[VELOCITIES_KEY][0])
-            graph = csvr(graph)
+            graph = csvr(graph, steps)
 
             temps_s1.append(T)
 
@@ -645,7 +650,7 @@ class TestCSVRThermostat(unittest.TestCase):
         for steps in range(500):
             T = f.temp(graph)
             vel_s2.append(graph[VELOCITIES_KEY][0])
-            graph = csvr(graph)
+            graph = csvr(graph, steps)
 
             temps_s2.append(T)
 
