@@ -28,7 +28,6 @@ from trajcast.utils.atomic_computes import (
 )
 from trajcast.utils.misc import (
     ACTIVATION_FUNCTIONS,
-    GLOBAL_DEVICE,
     mlp_config_from_dictionary,
 )
 
@@ -88,7 +87,6 @@ class ConservationLayer(GraphModuleIrreps, torch.nn.Module):
         self.index_vel = index_vel_target
         self.index_disp = index_disp_target
         self.angular = conserve_angular
-        self.device = GLOBAL_DEVICE.device
 
         if isinstance(vel_norm_const, float):
             vel_norm_const = torch.tensor(vel_norm_const)
@@ -124,7 +122,6 @@ class ConservationLayer(GraphModuleIrreps, torch.nn.Module):
 
         if self.angular:
             data = self._preserve_angular_momentum(data)
-
         data[self.input_field][
             :, self.index_vel : self.index_vel + 3
         ] /= self.prefactor_vel
@@ -196,7 +193,7 @@ class ConservationLayer(GraphModuleIrreps, torch.nn.Module):
             # compute inertia tensor
             mr = masses * dist_com_out
             mr2 = mr * dist_com_out
-            Inert = torch.zeros(data.ptr.size(0) - 1, 3, 3, device=self.device)
+            Inert = torch.zeros(data.ptr.size(0) - 1, 3, 3, device=masses.device)
             Inert[:, 0, 0] = scatter(
                 mr2[:, [1, 2]].sum(1), index=data.batch, dim=0, reduce="sum"
             )

@@ -5,8 +5,6 @@ import numpy as np
 import torch
 from ase import Atoms
 
-from trajcast.utils.misc import GLOBAL_DEVICE
-
 
 def cart2frac(cartesian_coords: np.array, lattice_vectors: np.array) -> np.array:
     inverse_lattice = np.linalg.inv(lattice_vectors)
@@ -221,7 +219,7 @@ def compute_inertia_tensor_for_individual_state(
     mr = masses * dist_com
     mr2 = mr * dist_com
     Inert = torch.zeros(
-        3, 3, dtype=torch.get_default_dtype(), device=GLOBAL_DEVICE.device
+        3, 3, dtype=torch.get_default_dtype(), device=masses.device
     )
     Inert[0, 0] = mr2[:, [1, 2]].sum()
     Inert[1, 1] = mr2[:, [0, 2]].sum()
